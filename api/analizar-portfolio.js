@@ -14,14 +14,14 @@ export default async function handler(req, res) {
   function buildChartPrompt(asset, kind) {
     const horizonDesc =
       horizon === "diario" ? "diagnóstico diario (corto plazo)" :
-      horizon === "semanal" ? "perspectiva semanal (2-4 semanas)" :
-      "perspectiva de mediano plazo (3-6 meses)";
+        horizon === "semanal" ? "perspectiva semanal (2-4 semanas)" :
+          "perspectiva de mediano plazo (3-6 meses)";
 
     const contextLine = kind === "watchlist"
       ? `El usuario está EVALUANDO comprar ${asset.ticker} (${asset.market}). Aún no lo tiene en cartera.`
       : kind === "crypto"
-      ? `Analizar la criptomoneda ${asset.ticker}/${asset.base}.`
-      : `El usuario TIENE ${asset.ticker} (${asset.market}) en cartera, cantidad: ${asset.qty || "no especificada"}.`;
+        ? `Analizar la criptomoneda ${asset.ticker}/${asset.base}.`
+        : `El usuario TIENE ${asset.ticker} (${asset.market}) en cartera, cantidad: ${asset.qty || "no especificada"}.`;
 
     return `Hoy es ${today}. Actuás como analista financiero senior con enfoque técnico-fundamental.
 
@@ -64,7 +64,9 @@ Respondé ÚNICAMENTE con un JSON válido (sin markdown, sin \`\`\`json, sin tex
   "justificacion_conviccion": "1 oración"
 }
 
-La serie_precios debe tener entre 60 y 90 puntos cubriendo los últimos 3-4 meses hasta hoy (${today}). Usá fechas reales en formato YYYY-MM-DD. Todos los precios en la moneda de cotización del activo (ARS para BCBA, USD para NYSE/NASDAQ/cripto).`;
+La serie_precios debe tener entre 60 y 90 puntos cubriendo los últimos 3-4 meses hasta hoy (${today}). Usá fechas reales en formato YYYY-MM-DD. Todos los precios en la moneda de cotización del activo (ARS para BCBA, USD para NYSE/NASDAQ/cripto).
+
+IMPORTANTE: el JSON debe ser válido y parseable. Los textos de analisis_tecnico, analisis_fundamental y diagnostico deben ser oraciones seguidas en una sola línea, SIN saltos de línea reales dentro del string (no uses Enter dentro de los valores de texto).`;
   }
 
   function buildAlarmPrompt() {
@@ -116,7 +118,44 @@ ${assets.map(a => `- ${a.ticker} (${a.market || a.base || ""})`).join("\n")}`;
     const lastBraceArr = clean.lastIndexOf("]");
     const lastBrace = Math.max(lastBraceObj, lastBraceArr);
     if (lastBrace !== -1) clean = clean.slice(0, lastBrace + 1);
-    return JSON.parse(clean);
+
+    try {
+      return JSON.parse(clean);
+    } catch (e) {
+      // Sanitize: escape raw control characters (newlines, tabs, etc.) that appear
+      // INSIDE string literals but were not escaped by the model.
+      let sanitized = "";
+      let inString = false;
+      let escapeNext = false;
+      for (let i = 0; i < clean.length; i++) {
+        const ch = clean[i];
+        if (escapeNext) {
+          sanitized += ch;
+          escapeNext = false;
+          continue;
+        }
+        if (ch === "\\") {
+          sanitized += ch;
+          escapeNext = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = !inString;
+          sanitized += ch;
+          continue;
+        }
+        if (inString && (ch === "\n" || ch === "\r" || ch === "\t")) {
+          sanitized += ch === "\t" ? "\\t" : "\\n";
+          continue;
+        }
+        // Strip other control characters that break JSON.parse
+        if (inString && ch.charCodeAt(0) < 0x20) {
+          continue;
+        }
+        sanitized += ch;
+      }
+      return JSON.parse(sanitized);
+    }
   }
 
   try {
@@ -146,4 +185,3 @@ ${assets.map(a => `- ${a.ticker} (${a.market || a.base || ""})`).join("\n")}`;
     return res.status(500).json({ error: "Error interno: " + err.message });
   }
 }
-

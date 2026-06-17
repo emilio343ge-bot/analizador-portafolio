@@ -1,36 +1,32 @@
 import React, { useState, useEffect, useRef } from "react";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine, Legend,
+} from "recharts";
 
 const API_URL = "/api/analizar-portfolio";
 
 // ── Helpers ──
 function uid() { return Math.random().toString(36).slice(2, 8); }
 
-function formatMD(text) {
-  return text
-    .replace(/^## (.+)$/gm, '<h2 style="font-size:16px;font-weight:800;color:#f0ede8;margin:1.5rem 0 0.5rem;border-bottom:1px solid #222;padding-bottom:6px">$1</h2>')
-    .replace(/^### (.+)$/gm, '<h3 style="font-size:13px;font-weight:700;color:#aaa;margin:1rem 0 0.25rem;letter-spacing:1px;text-transform:uppercase">$1</h3>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#f0ede8">$1</strong>')
-    .replace(/🚦 Señal técnica: (.+)/g, (_, s) => {
-      const colors = { COMPRAR: "#00e676", MANTENER: "#fbbf24", VENDER: "#ff4444", "TOMAR GANANCIAS": "#f97316", "SOPORTE DE COMPRA": "#60a5fa", ACUMULAR: "#00e676", REDUCIR: "#f97316" };
-      const c = Object.keys(colors).find(k => s.includes(k));
-      return `<div style="display:inline-flex;align-items:center;gap:8px;background:${c ? colors[c] + "22" : "#222"};border:1px solid ${c ? colors[c] + "55" : "#333"};border-radius:10px;padding:8px 14px;margin:8px 0;font-weight:800;font-size:14px;color:${c ? colors[c] : "#f0ede8"}">🚦 ${s}</div>`;
-    })
-    .replace(/🚦 Decisión: (.+)/g, (_, s) => {
-      const colors = { "ENTRAR AHORA": "#00e676", "ESPERAR CORRECCIÓN": "#fbbf24", EVITAR: "#ff4444", ACUMULAR: "#00e676", MANTENER: "#fbbf24", REDUCIR: "#f97316", VENDER: "#ff4444" };
-      const c = Object.keys(colors).find(k => s.includes(k));
-      return `<div style="display:inline-flex;align-items:center;gap:8px;background:${c ? colors[c] + "22" : "#222"};border:1px solid ${c ? colors[c] + "55" : "#333"};border-radius:10px;padding:8px 14px;margin:8px 0;font-weight:800;font-size:14px;color:${c ? colors[c] : "#f0ede8"}">🚦 ${s}</div>`;
-    })
-    .replace(/^(- .+)$/gm, '<div style="font-size:13px;color:#aaa;margin:3px 0;padding-left:4px">$1</div>')
-    .replace(/📌 (.+)/g, '<div style="color:#60a5fa;font-size:13px;font-weight:700;margin:4px 0">📌 $1</div>')
-    .replace(/💰 (.+)/g, '<div style="color:#00e676;font-size:13px;font-weight:700;margin:4px 0">💰 $1</div>')
-    .replace(/🛒 (.+)/g, '<div style="color:#34d399;font-size:13px;font-weight:700;margin:4px 0">🛒 $1</div>')
-    .replace(/🛑 (.+)/g, '<div style="color:#ff4444;font-size:13px;font-weight:700;margin:4px 0">🛑 $1</div>')
-    .replace(/🎯 (.+)/g, '<div style="color:#f97316;font-size:13px;font-weight:700;margin:4px 0">🎯 $1</div>')
-    .replace(/⚖️ (.+)/g, '<div style="color:#a78bfa;font-size:13px;font-weight:700;margin:4px 0">⚖️ $1</div>')
-    .replace(/📊 (.+)/g, '<div style="color:#fbbf24;font-size:13px;font-weight:700;margin:4px 0">📊 $1</div>')
-    .replace(/\n{2,}/g, '<div style="height:8px"></div>')
-    .replace(/\n/g, "<br/>");
+function fmtPrice(n, currency = "USD") {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const sym = currency === "ARS" ? "$" : "$";
+  return sym + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+const SIGNAL_META = {
+  COMPRAR: { label: "COMPRAR", color: "#00e676" },
+  MANTENER: { label: "MANTENER", color: "#fbbf24" },
+  VENDER: { label: "VENDER", color: "#ff4444" },
+  TOMAR_GANANCIAS: { label: "TOMAR GANANCIAS", color: "#f97316" },
+  SOPORTE_DE_COMPRA: { label: "SOPORTE DE COMPRA", color: "#60a5fa" },
+  ENTRAR_AHORA: { label: "ENTRAR AHORA", color: "#00e676" },
+  ESPERAR_CORRECCION: { label: "ESPERAR CORRECCIÓN", color: "#fbbf24" },
+  EVITAR: { label: "EVITAR", color: "#ff4444" },
+  ACUMULAR: { label: "ACUMULAR", color: "#00e676" },
+  REDUCIR: { label: "REDUCIR", color: "#f97316" },
+};
 
 // ── Styles ──
 const S = {
@@ -45,6 +41,9 @@ const S = {
   chip: (active, color) => ({ padding: "6px 12px", borderRadius: 20, border: "none", background: active ? color : "#1a1a1a", color: active ? "#000" : "#666", fontWeight: active ? 800 : 500, fontSize: 12, cursor: "pointer" }),
   tab: (active) => ({ flex: 1, padding: "12px 0", border: "none", background: "none", color: active ? "#f0ede8" : "#444", fontWeight: active ? 800 : 500, fontSize: 13, cursor: "pointer", borderBottom: active ? "2px solid #f0ede8" : "2px solid transparent" }),
   subtab: (active, color) => ({ padding: "7px 16px", borderRadius: 20, border: "none", background: active ? color + "22" : "none", color: active ? color : "#444", fontWeight: active ? 800 : 500, fontSize: 12, cursor: "pointer", border: active ? `1px solid ${color}44` : "1px solid transparent" }),
+  metricCell: { background: "#161616", borderRadius: 10, padding: "8px 10px", textAlign: "center" },
+  metricLabel: { fontSize: 9, color: "#555", letterSpacing: 1, textTransform: "uppercase", marginBottom: 3 },
+  metricValue: { fontSize: 14, fontWeight: 700, color: "#f0ede8" },
 };
 
 // ── Row components ──
@@ -121,23 +120,117 @@ function AlarmRow({ alarm, onRemove }) {
   );
 }
 
-// ── Analysis result ──
-function AnalysisResult({ result, timestamp, onDeepen }) {
+// ── Price chart ──
+function PriceChart({ asset }) {
+  if (!asset.serie_precios || !asset.serie_precios.length) return null;
+
+  const data = asset.serie_precios.map(p => ({
+    fecha: p.fecha?.slice(5) || "",
+    precio: p.precio,
+  }));
+
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ fontSize: 11, color: "#444" }}>⏱ {timestamp}</div>
-        <button style={S.btnOutline("#333")} onClick={onDeepen}>Profundizar ↗</button>
+    <div style={{ width: "100%", height: 220, marginBottom: 4 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1e1e1e" vertical={false} />
+          <XAxis dataKey="fecha" tick={{ fill: "#555", fontSize: 9 }} interval={Math.floor(data.length / 5)} axisLine={{ stroke: "#222" }} tickLine={false} />
+          <YAxis tick={{ fill: "#555", fontSize: 9 }} axisLine={false} tickLine={false} domain={["auto", "auto"]} width={42} />
+          <Tooltip
+            contentStyle={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, fontSize: 12 }}
+            labelStyle={{ color: "#888" }}
+            itemStyle={{ color: "#00e676" }}
+          />
+          {asset.resistencia && <ReferenceLine y={asset.resistencia} stroke="#ff4444" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: "Resist.", fill: "#ff4444", fontSize: 9, position: "insideTopRight" }} />}
+          {asset.soporte && <ReferenceLine y={asset.soporte} stroke="#00e676" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: "Soporte", fill: "#00e676", fontSize: 9, position: "insideBottomRight" }} />}
+          <Line type="monotone" dataKey="precio" stroke="#60a5fa" strokeWidth={2} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ── Asset analysis card ──
+function AssetCard({ asset }) {
+  if (asset.error) {
+    return (
+      <div style={{ ...S.card, borderColor: "#ff444433" }}>
+        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>{asset.ticker}</div>
+        <div style={{ fontSize: 13, color: "#ff8888" }}>No se pudo analizar: {asset.error}</div>
       </div>
-      <div style={{ ...S.card, background: "#0d0d0d" }}>
-        <div dangerouslySetInnerHTML={{ __html: formatMD(result) }} />
+    );
+  }
+
+  const sig = SIGNAL_META[asset.señal_tecnica] || { label: asset.señal_tecnica || "—", color: "#888" };
+  const trendColor = asset.tendencia === "alcista" ? "#00e676" : asset.tendencia === "bajista" ? "#ff4444" : "#fbbf24";
+
+  return (
+    <div style={S.card}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 2 }}>
+        <div>
+          <span style={{ fontSize: 17, fontWeight: 900 }}>{asset.ticker}</span>
+          <span style={{ fontSize: 12, color: "#555", marginLeft: 8 }}>{asset.nombre_completo}</span>
+        </div>
+        <span style={{ fontSize: 16, fontWeight: 800 }}>{fmtPrice(asset.precio_actual, asset.moneda)}</span>
+      </div>
+      {asset.variacion_pct_1m !== undefined && (
+        <div style={{ fontSize: 12, color: asset.variacion_pct_1m >= 0 ? "#00e676" : "#ff4444", marginBottom: 10 }}>
+          {asset.variacion_pct_1m >= 0 ? "▲" : "▼"} {Math.abs(asset.variacion_pct_1m).toFixed(2)}% últimos 30 días
+        </div>
+      )}
+
+      {/* Chart */}
+      <PriceChart asset={asset} />
+
+      {/* Signal badge */}
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: sig.color + "22", border: `1px solid ${sig.color}55`, borderRadius: 10, padding: "7px 14px", margin: "10px 0", fontWeight: 800, fontSize: 13, color: sig.color }}>
+        🚦 {sig.label}
+      </div>
+
+      {/* Metrics grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, margin: "10px 0" }}>
+        <div style={S.metricCell}><div style={S.metricLabel}>MA20</div><div style={S.metricValue}>{fmtPrice(asset.ma20, asset.moneda)}</div></div>
+        <div style={S.metricCell}><div style={S.metricLabel}>MA50</div><div style={S.metricValue}>{fmtPrice(asset.ma50, asset.moneda)}</div></div>
+        <div style={S.metricCell}><div style={S.metricLabel}>RSI</div><div style={{ ...S.metricValue, color: asset.rsi > 70 ? "#ff4444" : asset.rsi < 30 ? "#00e676" : "#f0ede8" }}>{asset.rsi}</div></div>
+        <div style={S.metricCell}><div style={S.metricLabel}>Tendencia</div><div style={{ ...S.metricValue, color: trendColor, fontSize: 11 }}>{asset.tendencia}</div></div>
+      </div>
+
+      {/* Technical analysis */}
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 4 }}>Análisis técnico</div>
+        <div style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{asset.analisis_tecnico}</div>
+      </div>
+
+      {/* Fundamental analysis */}
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 4 }}>Análisis fundamental</div>
+        <div style={{ fontSize: 13, color: "#bbb", lineHeight: 1.6 }}>{asset.analisis_fundamental}</div>
+      </div>
+
+      {/* Diagnosis */}
+      <div style={{ marginTop: 12, background: "#0d0d0d", borderRadius: 10, padding: "10px 12px" }}>
+        <div style={{ fontSize: 10, color: "#555", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 6 }}>Diagnóstico y niveles</div>
+        <div style={{ fontSize: 13, color: "#ddd", lineHeight: 1.6, marginBottom: 8 }}>{asset.diagnostico}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          {asset.toma_ganancias && <div style={{ fontSize: 12 }}><span style={{ color: "#00e676" }}>💰 Toma ganancias:</span> <strong>{fmtPrice(asset.toma_ganancias, asset.moneda)}</strong></div>}
+          {asset.soporte_compra && <div style={{ fontSize: 12 }}><span style={{ color: "#60a5fa" }}>🛒 Soporte compra:</span> <strong>{fmtPrice(asset.soporte_compra, asset.moneda)}</strong></div>}
+          {asset.precio_objetivo && <div style={{ fontSize: 12 }}><span style={{ color: "#f97316" }}>🎯 Objetivo:</span> <strong>{fmtPrice(asset.precio_objetivo, asset.moneda)}</strong></div>}
+          {asset.stop_loss && <div style={{ fontSize: 12 }}><span style={{ color: "#ff4444" }}>🛑 Stop loss:</span> <strong>{fmtPrice(asset.stop_loss, asset.moneda)}</strong></div>}
+        </div>
+        {asset.conviccion && (
+          <div style={{ fontSize: 12, marginTop: 8, color: "#888" }}>
+            📊 Convicción: <strong style={{ color: "#f0ede8" }}>{asset.conviccion}</strong>
+            {asset.justificacion_conviccion ? ` — ${asset.justificacion_conviccion}` : ""}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 // ── Loading ──
-function Loading({ text = "Analizando con IA y buscando datos actualizados…" }) {
+function Loading({ text = "Buscando datos reales y generando el análisis…" }) {
   const [dots, setDots] = useState("");
   useEffect(() => {
     const t = setInterval(() => setDots(d => d.length >= 3 ? "" : d + "."), 500);
@@ -158,19 +251,19 @@ export default function App() {
 
   // Portfolio
   const [portfolioRows, setPortfolioRows] = useState([{ id: uid(), ticker: "", market: "BCBA", qty: "" }, { id: uid(), ticker: "", market: "NYSE", qty: "" }]);
-  const [portfolioResult, setPortfolioResult] = useState(null);
+  const [portfolioResults, setPortfolioResults] = useState(null);
   const [portfolioLoading, setPortfolioLoading] = useState(false);
   const [portfolioTs, setPortfolioTs] = useState("");
 
   // Watchlist
   const [watchlistRows, setWatchlistRows] = useState([{ id: uid(), ticker: "", market: "NYSE" }]);
-  const [watchlistResult, setWatchlistResult] = useState(null);
+  const [watchlistResults, setWatchlistResults] = useState(null);
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [watchlistTs, setWatchlistTs] = useState("");
 
   // Crypto
   const [cryptoRows, setCryptoRows] = useState([{ id: uid(), ticker: "", base: "USD" }]);
-  const [cryptoResult, setCryptoResult] = useState(null);
+  const [cryptoResults, setCryptoResults] = useState(null);
   const [cryptoLoading, setCryptoLoading] = useState(false);
   const [cryptoTs, setCryptoTs] = useState("");
 
@@ -187,11 +280,11 @@ export default function App() {
   const [toast, setToast] = useState(null);
   function showToast(msg, ok = true) {
     setToast({ msg, ok });
-    setTimeout(() => setToast(null), 2500);
+    setTimeout(() => setToast(null), 3000);
   }
 
-  // ── API call ──
-  async function callAPI(mode, assets, h) {
+  // ── API calls ──
+  async function callAnalyze(mode, assets, h) {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -199,17 +292,28 @@ export default function App() {
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-    return data.result;
+    return data.assets; // array of structured asset objects
+  }
+
+  async function callAlarmCheck(assets) {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "alarm_check", assets, horizon: "" }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return JSON.parse(data.result);
   }
 
   // ── Portfolio analyze ──
   async function analyzePortfolio() {
     const assets = portfolioRows.filter(r => r.ticker.trim());
     if (!assets.length) { showToast("Agregá al menos un activo", false); return; }
-    setPortfolioLoading(true); setPortfolioResult(null);
+    setPortfolioLoading(true); setPortfolioResults(null);
     try {
-      const result = await callAPI("portfolio", assets, horizon.portfolio);
-      setPortfolioResult(result);
+      const results = await callAnalyze("portfolio", assets, horizon.portfolio);
+      setPortfolioResults(results);
       setPortfolioTs(new Date().toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }));
     } catch (e) { showToast("Error: " + e.message, false); }
     setPortfolioLoading(false);
@@ -219,10 +323,10 @@ export default function App() {
   async function analyzeWatchlist() {
     const assets = watchlistRows.filter(r => r.ticker.trim());
     if (!assets.length) { showToast("Agregá al menos un activo", false); return; }
-    setWatchlistLoading(true); setWatchlistResult(null);
+    setWatchlistLoading(true); setWatchlistResults(null);
     try {
-      const result = await callAPI("watchlist", assets, horizon.watchlist);
-      setWatchlistResult(result);
+      const results = await callAnalyze("watchlist", assets, horizon.watchlist);
+      setWatchlistResults(results);
       setWatchlistTs(new Date().toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }));
     } catch (e) { showToast("Error: " + e.message, false); }
     setWatchlistLoading(false);
@@ -232,10 +336,10 @@ export default function App() {
   async function analyzeCrypto() {
     const assets = cryptoRows.filter(r => r.ticker.trim());
     if (!assets.length) { showToast("Agregá al menos un activo", false); return; }
-    setCryptoLoading(true); setCryptoResult(null);
+    setCryptoLoading(true); setCryptoResults(null);
     try {
-      const result = await callAPI("crypto", assets, horizon.crypto);
-      setCryptoResult(result);
+      const results = await callAnalyze("crypto", assets, horizon.crypto);
+      setCryptoResults(results);
       setCryptoTs(new Date().toLocaleString("es-AR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }));
     } catch (e) { showToast("Error: " + e.message, false); }
     setCryptoLoading(false);
@@ -255,9 +359,7 @@ export default function App() {
     const tickers = [...new Set(active.map(a => a.ticker))];
     const assets = tickers.map(t => { const a = active.find(x => x.ticker === t); return { ticker: t, market: a.market }; });
     try {
-      const result = await callAPI("alarm_check", assets, "");
-      const clean = result.replace(/```json|```/g, "").trim();
-      const prices = JSON.parse(clean);
+      const prices = await callAlarmCheck(assets);
       setAlarms(prev => prev.map(alarm => {
         const found = prices.find(p => p.ticker === alarm.ticker);
         if (!found) return alarm;
@@ -353,8 +455,11 @@ export default function App() {
 
             <div style={{ marginTop: 20 }}>
               {portfolioLoading && <Loading />}
-              {portfolioResult && !portfolioLoading && (
-                <AnalysisResult result={portfolioResult} timestamp={portfolioTs} onDeepen={() => alert("Abrí el chat para profundizar el análisis")} />
+              {portfolioResults && !portfolioLoading && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 12 }}>⏱ Actualizado: {portfolioTs}</div>
+                  {portfolioResults.map((a, i) => <AssetCard key={i} asset={a} />)}
+                </div>
               )}
             </div>
           </div>
@@ -387,8 +492,11 @@ export default function App() {
 
             <div style={{ marginTop: 20 }}>
               {watchlistLoading && <Loading />}
-              {watchlistResult && !watchlistLoading && (
-                <AnalysisResult result={watchlistResult} timestamp={watchlistTs} onDeepen={() => {}} />
+              {watchlistResults && !watchlistLoading && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 12 }}>⏱ Actualizado: {watchlistTs}</div>
+                  {watchlistResults.map((a, i) => <AssetCard key={i} asset={a} />)}
+                </div>
               )}
             </div>
           </div>
@@ -421,8 +529,11 @@ export default function App() {
 
             <div style={{ marginTop: 20 }}>
               {cryptoLoading && <Loading />}
-              {cryptoResult && !cryptoLoading && (
-                <AnalysisResult result={cryptoResult} timestamp={cryptoTs} onDeepen={() => {}} />
+              {cryptoResults && !cryptoLoading && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#444", marginBottom: 12 }}>⏱ Actualizado: {cryptoTs}</div>
+                  {cryptoResults.map((a, i) => <AssetCard key={i} asset={a} />)}
+                </div>
               )}
             </div>
           </div>
@@ -537,7 +648,7 @@ export default function App() {
 
       {/* Toast */}
       {toast && (
-        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: toast.ok ? "#00e676" : "#ff4444", color: "#000", padding: "10px 20px", borderRadius: 20, fontWeight: 800, fontSize: 13, zIndex: 300 }}>
+        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: toast.ok ? "#00e676" : "#ff4444", color: "#000", padding: "10px 20px", borderRadius: 20, fontWeight: 800, fontSize: 13, zIndex: 300, maxWidth: "90%", textAlign: "center" }}>
           {toast.msg}
         </div>
       )}

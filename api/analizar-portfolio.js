@@ -10,139 +10,73 @@ export default async function handler(req, res) {
 
   const today = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" });
 
-  function buildPrompt() {
-    if (mode === "portfolio") {
-      const horizonDesc =
-        horizon === "diario" ? "diagnóstico diario (señales de corto plazo para hoy/esta semana)" :
-        horizon === "semanal" ? "perspectiva semanal (próximas 2-4 semanas)" :
-        "perspectiva de mediano plazo (próximos 3-6 meses)";
-      return `Hoy es ${today}. Actuás como analista financiero senior especializado en mercados argentinos (BCBA, CEDEARs) y americanos (NYSE/NASDAQ) con enfoque técnico-fundamental avanzado.
+  // ── Prompt for chart + analysis (one asset at a time, structured JSON) ──
+  function buildChartPrompt(asset, kind) {
+    const horizonDesc =
+      horizon === "diario" ? "diagnóstico diario (corto plazo)" :
+      horizon === "semanal" ? "perspectiva semanal (2-4 semanas)" :
+      "perspectiva de mediano plazo (3-6 meses)";
 
-El usuario tiene el siguiente portafolio:
-${assets.map(a => `- ${a.ticker} (${a.market}) — ${a.qty} unidades`).join("\n")}
+    const contextLine = kind === "watchlist"
+      ? `El usuario está EVALUANDO comprar ${asset.ticker} (${asset.market}). Aún no lo tiene en cartera.`
+      : kind === "crypto"
+      ? `Analizar la criptomoneda ${asset.ticker}/${asset.base}.`
+      : `El usuario TIENE ${asset.ticker} (${asset.market}) en cartera, cantidad: ${asset.qty || "no especificada"}.`;
 
-Horizonte: ${horizonDesc}
+    return `Hoy es ${today}. Actuás como analista financiero senior con enfoque técnico-fundamental.
 
-Para CADA activo, buscá datos actuales y producí un análisis avanzado con estas secciones exactas:
+${contextLine}
+Horizonte de análisis: ${horizonDesc}
 
-## [TICKER] — [Nombre completo]
+PASO 1: Buscá en internet el precio de cierre diario de este activo para los últimos 4 meses (aproximadamente 90-120 días hábiles). Necesito datos REALES de precio de cierre, no inventados. Si encontrás los datos exactos día por día, mejor; si solo encontrás datos semanales o puntos de referencia (mínimos, máximos, precio actual, precio hace 1 mes, hace 3 meses), interpolá una serie razonable que respete esos puntos reales y la tendencia real conocida.
 
-**ANÁLISIS TÉCNICO**
-- Precio actual y variación reciente
-- Tendencia principal (alcista/bajista/lateral) y fuerza
-- MA20 / MA50 / MA200: posición relativa del precio
-- RSI (14): nivel e interpretación (sobrecomprado >70, sobrevendido <30)
-- MACD: señal actual (cruce, divergencia)
-- Bandas de Bollinger: posición y volatilidad implícita
-- Volumen: confirmación o divergencia con precio
-- Soporte clave: $X.XX
-- Resistencia clave: $X.XX
-- 🚦 Señal técnica: COMPRAR / MANTENER / VENDER / TOMAR GANANCIAS / SOPORTE DE COMPRA
+PASO 2: Calculá sobre esa serie: MA20, MA50, RSI(14) aproximado, y 1-2 niveles de soporte y resistencia reales basados en mínimos/máximos recientes.
 
-**ANÁLISIS FUNDAMENTAL**
-- Valuación: P/E actual vs histórico y peers
-- Últimos resultados trimestrales (ingresos, ganancias, variación YoY)
-- Catalizadores positivos próximos (earnings, macro, regulatorio, dividendos)
-- Riesgos principales
+PASO 3: Buscá los fundamentos reales: P/E, resultados últimos trimestres, catalizadores, riesgos.
 
-**DIAGNÓSTICO Y ACCIÓN SUGERIDA**
-- 📌 Señal principal: [señal clara]
-- 💰 Toma de ganancias: $X.XX (nivel sugerido para venta parcial)
-- 🛒 Soporte de compra: $X.XX (nivel para agregar posición)
-- 🛑 Stop loss: $X.XX
-- 📊 Convicción: Alta / Media / Baja — [justificación en 1 línea]
+Respondé ÚNICAMENTE con un JSON válido (sin markdown, sin \`\`\`json, sin texto antes o después), con esta estructura EXACTA:
 
-Si el activo es argentino, considerá el contexto macro local (inflación, tipo de cambio, riesgo país). Sé concreto con los precios en números reales.`;
-    }
+{
+  "ticker": "${asset.ticker}",
+  "nombre_completo": "nombre de la empresa o activo",
+  "precio_actual": 123.45,
+  "moneda": "USD o ARS",
+  "variacion_pct_1m": -2.3,
+  "serie_precios": [
+    {"fecha": "2026-02-17", "precio": 118.20},
+    {"fecha": "2026-02-18", "precio": 119.00}
+  ],
+  "ma20": 120.5,
+  "ma50": 115.3,
+  "rsi": 58,
+  "soporte": 112.0,
+  "resistencia": 130.0,
+  "tendencia": "alcista | bajista | lateral",
+  "señal_tecnica": "COMPRAR | MANTENER | VENDER | TOMAR_GANANCIAS | SOPORTE_DE_COMPRA | ENTRAR_AHORA | ESPERAR_CORRECCION | EVITAR",
+  "analisis_tecnico": "2-4 oraciones explicando la lectura técnica: tendencia, MAs, RSI, volumen, soporte/resistencia.",
+  "analisis_fundamental": "2-4 oraciones con P/E, resultados recientes, catalizadores y riesgos principales.",
+  "diagnostico": "2-3 oraciones con la acción concreta sugerida.",
+  "toma_ganancias": 135.0,
+  "soporte_compra": 110.0,
+  "stop_loss": 105.0,
+  "precio_objetivo": 140.0,
+  "conviccion": "Alta | Media | Baja",
+  "justificacion_conviccion": "1 oración"
+}
 
-    if (mode === "watchlist") {
-      const horizonDesc = horizon === "diario" ? "señal de entrada de corto plazo" : "perspectiva de mediano plazo (3-6 meses)";
-      return `Hoy es ${today}. Actuás como analista financiero senior.
+La serie_precios debe tener entre 60 y 90 puntos cubriendo los últimos 3-4 meses hasta hoy (${today}). Usá fechas reales en formato YYYY-MM-DD. Todos los precios en la moneda de cotización del activo (ARS para BCBA, USD para NYSE/NASDAQ/cripto).`;
+  }
 
-El usuario está considerando comprar estos activos (aún NO los tiene en cartera):
-${assets.map(a => `- ${a.ticker} (${a.market})`).join("\n")}
-
-Enfoque: ${horizonDesc}
-
-Para CADA activo:
-
-## [TICKER] — [Nombre completo]
-
-**¿ES BUEN MOMENTO PARA ENTRAR?**
-- Precio actual vs niveles históricos recientes
-- Tendencia actual: ¿ciclo favorable?
-- RSI y MACD: ¿señal de entrada o hay que esperar?
-- Soporte cercano: $X.XX
-
-**ANÁLISIS FUNDAMENTAL**
-- Valuación: ¿cara o barata? (P/E, PEG, EV/EBITDA)
-- Crecimiento ingresos/ganancias últimos 2 trimestres
-- Catalizadores próximos
-- Sector y posición vs competidores
-
-**VEREDICTO DE ENTRADA**
-- 🚦 Decisión: ENTRAR AHORA / ESPERAR CORRECCIÓN / EVITAR
-- 🛒 Precio ideal de entrada: $X.XX — $X.XX
-- 🎯 Precio objetivo: $X.XX (upside potencial: X%)
-- 🛑 Stop loss: $X.XX
-- ⚖️ Relación riesgo/beneficio: X:1
-- 📊 Convicción: Alta / Media / Baja`;
-    }
-
-    if (mode === "crypto") {
-      const horizonDesc = horizon === "diario" ? "diagnóstico diario" : "perspectiva de mediano plazo";
-      return `Hoy es ${today}. Actuás como analista cripto especializado en análisis técnico y on-chain.
-
-Criptomonedas a analizar:
-${assets.map(a => `- ${a.ticker}/${a.base}`).join("\n")}
-
-Horizonte: ${horizonDesc}
-
-Para CADA cripto:
-
-## [TICKER]/[BASE] — [Nombre completo]
-
-**ANÁLISIS TÉCNICO**
-- Precio actual y capitalización de mercado
-- Tendencia diaria y semanal
-- RSI (14): nivel y contexto
-- MACD: señal actual
-- MA50 / MA200: ¿death cross o golden cross?
-- Soporte clave: $X.XX
-- Resistencia clave: $X.XX
-- Dominance de BTC si es relevante para altcoins
-
-**ANÁLISIS FUNDAMENTAL**
-- Utilidad y casos de uso del proyecto
-- Actividad on-chain reciente
-- Narrativas dominantes (ETFs, Layer2, DeFi, etc.)
-- Próximos eventos: halvings, upgrades, unlocks de tokens
-- Fear & Greed Index estimado
-
-**SEÑAL Y ACCIÓN**
-- 🚦 Señal: ACUMULAR / MANTENER / REDUCIR / VENDER
-- 🛒 Zona de acumulación: $X.XX — $X.XX
-- 🎯 Target parcial: $X.XX / Target total: $X.XX
-- 🛑 Stop loss: $X.XX
-- 📊 Convicción: Alta / Media / Baja — [justificación]`;
-    }
-
-    if (mode === "alarm_check") {
-      return `Hoy es ${today}. Buscá el precio actual de mercado de estos activos usando Google Search.
-Respondé ÚNICAMENTE con un JSON array válido, sin texto adicional, sin markdown, sin explicaciones:
-[{"ticker":"AAPL","price":213.45},{"ticker":"GGAL","price":8750.00}]
+  function buildAlarmPrompt() {
+    return `Hoy es ${today}. Buscá el precio actual de mercado de estos activos usando Google Search.
+Respondé ÚNICAMENTE con un JSON array válido, sin texto adicional, sin markdown:
+[{"ticker":"AAPL","price":213.45}]
 
 Activos a consultar:
 ${assets.map(a => `- ${a.ticker} (${a.market || a.base || ""})`).join("\n")}`;
-    }
-
-    return "";
   }
 
-  const prompt = buildPrompt();
-  if (!prompt) return res.status(400).json({ error: "Modo inválido" });
-
-  try {
+  async function callGemini(prompt) {
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
     const model = "gemini-2.5-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
@@ -150,10 +84,7 @@ ${assets.map(a => `- ${a.ticker} (${a.market || a.base || ""})`).join("\n")}`;
     const body = {
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       tools: [{ google_search: {} }],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 4096,
-      },
+      generationConfig: { temperature: 0.25, maxOutputTokens: 8192 },
     };
 
     const geminiRes = await fetch(url, {
@@ -163,18 +94,56 @@ ${assets.map(a => `- ${a.ticker} (${a.market || a.base || ""})`).join("\n")}`;
     });
 
     const data = await geminiRes.json();
-
-    if (data.error) return res.status(500).json({ error: data.error.message });
+    if (data.error) throw new Error(data.error.message);
 
     const text = data.candidates?.[0]?.content?.parts
       ?.filter(p => p.text)
       ?.map(p => p.text)
       ?.join("\n") || "";
 
-    if (!text) return res.status(500).json({ error: "Respuesta vacía de Gemini" });
+    if (!text) throw new Error("Respuesta vacía de Gemini");
+    return text;
+  }
 
-    return res.status(200).json({ result: text });
+  function safeParseJSON(text) {
+    let clean = text.replace(/```json|```/g, "").trim();
+    // Extract the outermost JSON object/array in case there's stray text
+    const firstBrace = Math.min(
+      ...["{", "["].map(c => { const i = clean.indexOf(c); return i === -1 ? Infinity : i; })
+    );
+    if (firstBrace !== Infinity) clean = clean.slice(firstBrace);
+    const lastBraceObj = clean.lastIndexOf("}");
+    const lastBraceArr = clean.lastIndexOf("]");
+    const lastBrace = Math.max(lastBraceObj, lastBraceArr);
+    if (lastBrace !== -1) clean = clean.slice(0, lastBrace + 1);
+    return JSON.parse(clean);
+  }
+
+  try {
+    if (mode === "alarm_check") {
+      const text = await callGemini(buildAlarmPrompt());
+      const parsed = safeParseJSON(text);
+      return res.status(200).json({ result: JSON.stringify(parsed) });
+    }
+
+    if (mode === "portfolio" || mode === "watchlist" || mode === "crypto") {
+      const kind = mode;
+      const results = [];
+      for (const asset of assets) {
+        try {
+          const text = await callGemini(buildChartPrompt(asset, kind));
+          const parsed = safeParseJSON(text);
+          results.push(parsed);
+        } catch (e) {
+          results.push({ ticker: asset.ticker, error: e.message });
+        }
+      }
+      return res.status(200).json({ assets: results });
+    }
+
+    return res.status(400).json({ error: "Modo inválido" });
   } catch (err) {
     return res.status(500).json({ error: "Error interno: " + err.message });
   }
 }
+
